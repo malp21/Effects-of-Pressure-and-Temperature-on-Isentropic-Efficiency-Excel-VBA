@@ -1,0 +1,291 @@
+Option Explicit
+
+'Reference List:
+    '1
+    'Main Article this code is based off, main values and content from here
+    'https://www.sciencedirect.com/science/article/pii/S0360544221009142
+    '
+    '2
+    'Thermodynamic properties assumed from dry air
+    'https://www.engineeringtoolbox.com/dry-air-properties-d_973.html
+    '
+    '3
+    'FUNDAMENTALS OF GAS TURBINE ENGINES
+    'https://www.cast-safety.org/pdf/3_engine_fundamentals.pdf
+    '
+    '4
+    'first-law-of-thermodynamics-for-an-open-system
+    'https://www.isisvarese.edu.it/wp-content/uploads/2016/03/first-law-of-thermodynamics-for-an-open-system-.pdf
+    
+'Assumptions and Boundary Conditions as per Reference 1:
+    ' The gas behaves as an ideal gas throughout the process.
+    ' The gas composition is assumed to be dry air.
+    ' The process is considered isentropic
+    ' Specific heat ratio (k) and specific heat capacity (cp) values are based on dry air properties at the specified conditions in Reference 1.
+    ' Mass flow rate (m), inlet temperature (T1r), outlet temperature (T2r), inlet pressure (P1r), outlet pressure (P2r), isentropic efficiency (Ntr), and turbine axial work (W) values are in accordance with Reference 1.
+    ' The calculations assume steady-state conditions.
+    
+'Units:
+'
+    'Ratio      Expansion Ratio
+    'Nt         Isentropic Efficiecny
+    'k          specific heat ratio for dry air at 1400 K
+    'cp         specific heat for dry air at 1400 K (MJ/kgK)
+    'm          Mass Flow Rate (kg/s)
+    'T1r        Inlet Temp (K)
+    'T2r        Outlet Temp (K)
+    'P1r        Inlet Pressure (MPa)
+    'P2r        Outlet Pressure (MPa)
+    'Ntr        Isentropic Efficiency
+    'W          Turbine Axial Work (MW)
+    'RatioR     Expansion Ratio
+    'Ws         Isentropic Turbine Work (MW)
+    'T2s        Ideal Temperature Output (K)
+    'RatioP2s   P2/P1
+    
+        
+Dim T1 As Double
+Dim Ratio As Integer
+Dim Nt As Double
+
+Const k As Double = 1.314
+Const cp As Double = 0.0012005
+
+'Assumptions and boundary conditions
+'type of gas etc.
+
+Enum ReferenceOperatingConditions
+    m = 358
+    T1r = 1473.15
+    T2r = 598
+    P1r = 1.4
+    P2r = 0.1
+    Ntr = 0.871
+    W = 420
+    RatioR = 14.9
+End Enum
+
+'Covert Inlet Temperatures Given in Celcius (per ref 1) into Kelvin
+Function CelsiusToKelvin(CelsiusTemp As Double) As Double
+    Dim KelvinTemp As Double
+    KelvinTemp = CelsiusTemp + 273.15
+    CelsiusToKelvin = KelvinTemp
+End Function
+
+'Solve for Outlet Temperatures using Ideal Gas Law
+'T2s should values should be less than T1 values
+Function SolveT2s(T1 As Double, Ratio As Double) As Double
+    Const A As Double = (k - 1) / k
+    Dim T2s As Double
+    T2s = (T1 * (Ratio ^ A))
+    SolveT2s = T2s
+End Function
+
+'Solve for Isentropic Turbin Work assuming the fluid is ideal and the process is steady state
+Function SolveWs(T1 As Double, Ratio As Double) As Double
+    Dim T2s As Double
+    T2s = SolveT2s(T1, Ratio)
+    SolveWs = m * cp * (T1 - T2s)
+End Function
+
+'Solve for Isentropic Efficiency
+'Values for Isentropic Efficiency should be between 0 and 1
+Function SolveIsentropicEfficiency(Ws As Double) As Double
+    SolveIsentropicEfficiency = W / Ws
+End Function
+
+Sub CalculateIsentropicEfficiency()
+    Dim Ws As Double
+    Dim T2s As Double
+    Dim xValues As Range
+    Dim cell As Range
+    Dim KelvinTemp2 As Double
+    Dim RatioP2s As Double
+    
+    On Error Resume Next
+    
+    Range("B11:E15").ClearContents
+    
+    Set xValues = Range("A12:A15")
+    
+    'with inlet temp as the independant variable
+    If Range("A11").Value = Range("B2").Value Then
+        For Each cell In xValues
+            KelvinTemp2 = CelsiusToKelvin(cell.Value)
+            cell.Offset(0, 1).Value = KelvinTemp2
+            Range("B11").Value = "Inlet Temp (K)"
+        Next cell
+        
+        Set xValues = Range("B12:B15")
+        RatioP2s = 1 / RatioR
+        
+        For Each cell In xValues
+            T2s = SolveT2s(cell.Value, RatioP2s)
+            cell.Offset(0, 1).Value = T2s
+            Range("C11").Value = "T2s (K)"
+            
+            Ws = SolveWs(cell.Value, RatioP2s)
+            cell.Offset(0, 2).Value = Ws
+            Range("D11").Value = "Ws (MJ/kg)"
+            
+            'Handle Num Error
+            If Ws <> 0 Then
+                Nt = SolveIsentropicEfficiency(Ws)
+                cell.Offset(0, 3).Value = Nt
+                Range("E11").Value = "Isentropic Efficiency"
+            Else
+                cell.Offset(0, 3).Value = "N/A"
+                MsgBox "Error: Divide by Zero", vbExclamation, "Error"
+                End If
+                
+            ' Check if T2s > T1
+            If T2s > KelvinTemp2 Then
+                cell.Offset(0, 1).ClearFormats
+                cell.EntireRow.Interior.Color = RGB(255, 0, 0) ' Red
+                MsgBox "Warning: T2s is greater than T1. Double-check your data!", vbExclamation, "Error"
+            End If
+                
+            ' Check if isentropic efficiency is outside the expected range
+            If Nt < 0 Or Nt > 1 Then
+                cell.Offset(0, 3).ClearFormats
+                cell.Offset(0, 3).Interior.Color = RGB(255, 0, 0) ' Red
+                MsgBox "Warning: Isentropic Efficiency should be between 0 and 1. Double-check values and units.", vbExclamation, "Error"
+            End If
+        Next cell
+        
+    'with expansion ratio as the independant ratio
+    ElseIf Range("A11").Value = Range("A2").Value Then
+        
+        For Each cell In xValues
+            Dim P2 As Double
+            
+            RatioP2s = cell.Value
+            RatioP2s = 1 / RatioP2s
+            cell.Offset(0, 1).Value = RatioP2s
+            Range("B11").Value = "P2s/P1"
+        Next cell
+        
+        For Each cell In Range("B12:B15")
+            T2s = SolveT2s(T1r, cell.Value)
+            cell.Offset(0, 1).Value = T2s
+            Range("C11").Value = "T2s (K)"
+            
+            Ws = SolveWs(T1r, cell.Value)
+            cell.Offset(0, 2).Value = Ws
+            Range("D11").Value = "Ws (MJ/kg)"
+            
+            'Handle Num Error
+            If Ws <> 0 Then
+                Nt = SolveIsentropicEfficiency(Ws)
+                cell.Offset(0, 3).Value = Nt
+                Range("E11").Value = "Isentropic Efficiency"
+            Else
+                cell.Offset(0, 3).Value = "N/A"
+                MsgBox "Error: Divide by Zero", vbExclamation, "Error"
+            End If
+            
+            ' Check if T2s > T1
+            If T2s > T1r Then
+                cell.Offset(0, 1).ClearFormats
+                cell.EntireRow.Interior.Color = RGB(255, 0, 0) ' Red
+                MsgBox "Warning: T2s is greater than T1. Double-check your data!", vbExclamation, "Error"
+            End If
+                
+            ' Check if isentropic efficiency is outside the expected range
+            If Nt < 0 Or Nt > 1 Then
+                cell.Offset(0, 3).ClearFormats
+                cell.Offset(0, 3).Interior.Color = RGB(255, 0, 0) ' Red
+                MsgBox "Warning: Isentropic Efficiency should be between 0 and 1. Double-check values and units.", vbExclamation, "Error"
+            End If
+            
+        Next cell
+    End If
+    
+    On Error GoTo 0
+End Sub
+
+Sub VisualizeData()
+    Dim Chrt As ChartObject
+    Dim xValues As Range
+    Dim yValues As Range
+    Dim parts() As String
+    
+    Dim txt As String
+    txt = Range("A11").Value
+    parts = Split(txt, "-")
+
+    Set xValues = Range("A12:A15")
+    Set yValues = Range("E12:E15")
+
+    Set Chrt = ActiveSheet.ChartObjects.Add(Left:=450, Width:=450, Top:=50, Height:=300)
+
+    Chrt.Chart.ChartType = xlXYScatterLines
+
+    With Chrt.Chart.SeriesCollection.NewSeries
+        .xValues = xValues
+        .Values = yValues
+        .Name = Trim(parts(1))
+    End With
+
+    With Chrt.Chart.SeriesCollection(1).Trendlines.Add
+        .Type = xlLinear
+        .DisplayEquation = False 'Set to True if you need equation of trendline
+    End With
+    
+    Chrt.Chart.Axes(xlCategory, xlPrimary).HasTitle = True
+    Chrt.Chart.Axes(xlCategory, xlPrimary).AxisTitle.Text = Trim(parts(0))
+    
+    Chrt.Chart.Axes(xlValue, xlPrimary).HasTitle = True
+    Chrt.Chart.Axes(xlValue, xlPrimary).AxisTitle.Text = Range("E11").Value
+    
+    Chrt.Chart.Axes(xlValue, xlPrimary).MinimumScale = 0.2
+    Chrt.Chart.Axes(xlCategory, xlPrimary).MinimumScale = 12
+
+Dim Table As Range
+
+Set Table = Range("A11:E15")
+
+' Apply borders to the table range
+With Table.Borders(xlEdgeLeft)
+    .LineStyle = xlContinuous
+    .ColorIndex = 0
+    .TintAndShade = 0
+    .Weight = xlThin
+End With
+
+With Table.Borders(xlEdgeTop)
+    .LineStyle = xlContinuous
+    .ColorIndex = 0
+    .TintAndShade = 0
+    .Weight = xlThin
+End With
+
+With Table.Borders(xlEdgeBottom)
+    .LineStyle = xlContinuous
+    .ColorIndex = 0
+    .TintAndShade = 0
+    .Weight = xlThin
+End With
+
+With Table.Borders(xlEdgeRight)
+    .LineStyle = xlContinuous
+    .ColorIndex = 0
+    .TintAndShade = 0
+    .Weight = xlThin
+End With
+
+With Table.Borders(xlInsideVertical)
+    .LineStyle = xlContinuous
+    .ColorIndex = 0
+    .TintAndShade = 0
+    .Weight = xlThin
+End With
+
+With Table.Borders(xlInsideHorizontal)
+    .LineStyle = xlContinuous
+    .ColorIndex = 0
+    .TintAndShade = 0
+    .Weight = xlThin
+End With
+
+End Sub
